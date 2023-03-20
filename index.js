@@ -1,121 +1,163 @@
 const express = require('express');
+const cookieParser = require("cookie-parser");
+const sessions = require('express-session');
+var parseUrl = require('body-parser');
 const app = express();
-const swaggerUi = require('swagger-ui-express');
-const yamlJs = require('yamljs');
-const swaggerDocument = yamlJs.load('./swagger.yaml');
-const {v4: uuidv4} = require('uuid');
 
-require('dotenv').config();
+var mysql = require('mysql');
+const bcrypt = require('bcrypt');
 
-const port = process.env.PORT || 3000;
+let encodeUrl = parseUrl.urlencoded({ extended: false });
 
-let sessions = [];
-let users = [
-    {id: 1, email: 'admin@admin.com', password: 'admin'}
-];
-// Serve static files
-app.use(express.static('public'));
+//session middleware
+app.use(sessions({
+    secret: "thisismysecrctekey",
+    saveUninitialized:true,
+    cookie: { maxAge: 1000 * 60 * 60 * 24 }, // 24 hours
+    resave: false
+}));
 
-// Use the Swagger UI
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+app.use(cookieParser());
 
-// Middleware to parse JSON
-app.use(express.json());
+var con = mysql.createConnection({
+    host: "localhost",
+    user: "root", // my username
+    password: "qwerty", // my password
+    database: "login"
+});
 
-// General error handler
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    const status = err.statusCode || 500;
-    res.status(status).send(err.message);
-})
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/signup.html');
+});
 
-// Routes
-app.post('/sessions', (req, res) => {
-    // Validate email and password
-    if (!req.body.email || !req.body.password) {
-        return res.status(400).send('Email and password are required')
-    }
-    // Get user
-    const user = users.find(user => user.email === req.body.email)
-    if (!user) {
-        return res.status(400).send('User not found')
-    }
-    // Check password
-    if (user.password !== req.body.password) {
-        return res.status(400).send('Invalid password')
-    }
+app.post('/signup', encodeUrl, async (req, res) => {
+    var firstName = req.body.firstName;
+    var lastName = req.body.lastName;
+    var userName = req.body.userName;
+    var password = req.body.password;
 
-    // If valid, create a session
-    const session = {
-        id: uuidv4(),
-        userId: user.id,
-        createdAt: new Date()
-    }
+    con.connect(function(err) {
+        if (err){
+            console.log(err);
+        };
+        // checking user already registered or no
+        con.query(`SELECT * FROM users WHERE username = '${userName}'`, async function(err, result){
+            if(err){
+                console.log(err);
+            };
+            if(Object.keys(result).length > 0){
+                res.sendFile(__dirname + '/failreg.html');
+            }else{
+                const saltRounds = 10;
+                const salt = await bcrypt.genSalt(saltRounds);
+                const hash = await bcrypt.hash(password, salt);
+                password = hash;
 
-    // Add session to sessions array
-    sessions.push(session)
+                //creating user page in userPage function
+                function userPage(){
+                    // We create a session for the dashboard (user page) page and save the user data to this session:
+                    req.session.user = {
+                        firstname: firstName,
+                        lastname: lastName,
+                        username: userName,
+                        password: password
+                    };
 
-    // Return a new session
-    res.status(201).send({sessionId: session.id})
-})
+                    res.send(`
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <title>Login and register form with Node.js, Express.js and MySQL</title>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+                </head>
+                <body>
+                    <div class="container">
+                        <h3>Hi, ${req.session.user.firstname} ${req.session.user.lastname}</h3>
+                        <a href="/">Log out</a>
+                    </div>
+                </body>
+                </html>
+                `);
+                }
+                // inserting new user data
+                var sql = `INSERT INTO users (firstname, lastname, username, password) VALUES ('${firstName}', '${lastName}', '${userName}', '${password}')`;
+                con.query(sql, function (err, result) {
+                    if (err){
+                        console.log(err);
+                    }else{
+                        // using userPage function for creating user page
+                        userPage();
+                    };
+                });
 
-function authenticateRequest(req, res, next) {
+            }
 
-    // Check for authorization header
-    const authHeader = req.headers.authorization
-    if (!authHeader) {
-        return res.status(401).send('Authorization header is required')
-    }
+        });
+    });
 
-    // Check Authorization header format
-    const authHeaderParts = authHeader.split(' ')
-    if (authHeaderParts.length !== 2 || authHeaderParts[0] !== 'Bearer') {
-        return res.status(401).send('Authorization header format must be "Bearer {token}"')
-    }
 
-    // Get session ID from header
-    const sessionId = authHeaderParts[1]
+});
 
-    // Validate session ID
-    if (!sessionId) {
-        return res.status(401).send('Session ID is required')
-    }
+app.get("/login", (req, res)=>{
+    res.sendFile(__dirname + "/login.html");
+});
 
-    // Get session
-    const session = sessions.find(session => session.id === sessionId)
+app.post("/dashboard", encodeUrl, (req, res)=>{
+    var userName = req.body.userName;
+    var password = req.body.password;
 
-    // If session not found, return 401
-    if (!session) {
-        return res.status(401).send('Invalid session')
-    }
+    con.connect(function(err) {
+        if(err){
+            console.log(err);
+        };
+        con.query(`SELECT * FROM users WHERE username = '${userName}'`, function (err, result) {
+            if(err){
+                console.log(err);
+            };
 
-    // Get user
-    const user = users.find(user => user.id === session.userId)
+            function userPage(){
+                // We create a session for the dashboard (user page) page and save the user data to this session:
+                req.session.user = {
+                    firstname: result[0].firstname,
+                    lastname: result[0].lastname,
+                    username: userName,
+                    password: password
+                };
 
-    // Validate user
-    if (!user) {
-        return res.status(401).send('User not found')
-    }
+                res.send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <title>Login</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+            </head>
+            <body>
+                <div class="container">
+                    <h3>Hi, ${req.session.user.firstname} ${req.session.user.lastname}</h3>
+                    <a href="/">Log out</a>
+                </div>
+            </body>
+            </html>
+            `);
+            }
 
-    // Add session to request
-    req.session = session
+            if(Object.keys(result).length > 0){
+                userPage();
+            }else{
+                res.sendFile(__dirname + '/faillog.html');
+            }
 
-    // Add user to request
-    req.user = user
+        });
+    });
+});
 
-    // Continue processing the request
-    next()
-}
 
-app.delete('/sessions', authenticateRequest, (req, res) => {
-
-    // Remove session from sessions array
-    sessions = sessions.filter(session => session.id !== req.session.id)
-
-    // Return a 204 with no content if the session was deleted
-    res.status(204).send()
-})
+const port = process.env.PORT || 4000;
 
 app.listen(port, () => {
     console.log(`App running. Docs at http://localhost:${port}/docs`);
-})
+});
