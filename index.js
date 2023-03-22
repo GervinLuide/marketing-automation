@@ -27,7 +27,10 @@ var con = mysql.createConnection({
 });
 
 app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/signup.html');
+    res.sendFile(__dirname + '/public/index.html');
+});
+app.get('/signup', (req, res) => {
+    res.sendFile(__dirname + '/public/signup.html');
 });
 
 app.post('/signup', encodeUrl, async (req, res) => {
@@ -46,7 +49,7 @@ app.post('/signup', encodeUrl, async (req, res) => {
                 console.log(err);
             };
             if(Object.keys(result).length > 0){
-                res.sendFile(__dirname + '/failreg.html');
+                res.sendFile(__dirname + '/public/failreg.html');
             }else{
                 const saltRounds = 10;
                 const salt = await bcrypt.genSalt(saltRounds);
@@ -101,7 +104,7 @@ app.post('/signup', encodeUrl, async (req, res) => {
 });
 
 app.get("/login", (req, res)=>{
-    res.sendFile(__dirname + "/login.html");
+    res.sendFile(__dirname + "/public/login.html");
 });
 
 app.post("/dashboard", encodeUrl, (req, res)=>{
@@ -148,7 +151,7 @@ app.post("/dashboard", encodeUrl, (req, res)=>{
             if(Object.keys(result).length > 0){
                 userPage();
             }else{
-                res.sendFile(__dirname + '/faillog.html');
+                res.sendFile(__dirname + '/public/faillog.html');
             }
 
         });
@@ -159,6 +162,5 @@ app.post("/dashboard", encodeUrl, (req, res)=>{
 const port = process.env.PORT || 4000;
 
 app.listen(port, () => {
-    console.log(`App running. Docs at http://localhost:${port}/docs`);
+    console.log(`App running. Docs at http://localhost:${port}`);
 });
-
